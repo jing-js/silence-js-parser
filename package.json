@@ -1,19 +1,19 @@
 {
-  "name": "silence-js-util",
+  "name": "silence-js-parser",
   "version": "1.0.0",
-  "description": "util module for silence-js",
+  "description": "http request parser for silence-js",
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jing-js/silence-js-util.git"
+    "url": "git+https://github.com/jing-js/silence-js-parser.git"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "bugs": {
-    "url": "https://github.com/jing-js/silence-js-util/issues"
+    "url": "https://github.com/jing-js/silence-js-parser/issues"
   },
-  "homepage": "https://github.com/jing-js/silence-js-util#readme",
+  "homepage": "https://github.com/jing-js/silence-js-parser#readme",
   "author": "Yuhang Ge <abeyuhang@gmail.com>",
   "license": "ISC",
   "dependencies": {

@@ -2,7 +2,6 @@
 
 const raw = require('raw-body');
 const qs = require('querystring');
-const zlib = require('zlib');
 const jsonReg = /^[\x20\x09\x0a\x0d]*[\[\{]/;
 
 class SilenceParser {
@@ -24,16 +23,10 @@ class SilenceParser {
   _raw(ctx, defaultOptions, options) {
     let req = ctx._originRequest;
     let opts = {
-      length: undefined, 
+      length: req.headers['content-length'] || undefined, 
       limit: options ? (options.limit || defaultOptions.limit) : defaultOptions.limit,
       encoding: options ? (options.encoding || defaultOptions.encoding) : defaultOptions.encoding
     };
-    if (req.headers['content-encoding'] === 'gzip' || req.headers['content-encoding'] === 'deflate') {
-      req = req.pipe(zlib.Unzip());
-    }
-    if (req.headers['content-length'] && !req.headers['content-encoding']) {
-      opts.length = req.headers['content-length'];
-    }
     return raw(req, opts);
   }
   _json(ctx, options) {
