@@ -2,7 +2,7 @@
   "name": "silence-js-parser",
   "version": "1.0.0",
   "description": "http request parser for silence-js",
-  "main": "index.js",
+  "main": "./src/index.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jing-js/silence-js-parser.git"
@@ -17,7 +17,6 @@
   "author": "Yuhang Ge <abeyuhang@gmail.com>",
   "license": "ISC",
   "dependencies": {
-    "formidable": "^1.0.17",
-    "raw-body": "^2.1.7"
+    "formidable": "^1.0.17"
   }
 }
