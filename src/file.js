@@ -35,6 +35,7 @@ class File extends EventEmitter {
       autoClose: true
     });
     this._stream.on('error', err => {
+      console.log('file error', err);
       if (!this._stream) {
         return;
       }
@@ -69,7 +70,7 @@ class File extends EventEmitter {
     }
     this._stream.write(chunk, () => {
       this.size += chunk.length;
-      cb()
+      cb && cb()
     });
   }
   end() {

@@ -4,6 +4,7 @@ const Parser = require('./parser');
 const os = require('os');
 const parseBytes = require('./parseBytes')
 const Stream = require('stream').Stream;
+const path = require('path');
 const File = require('./file');
 const EventEmitter = require('events').EventEmitter;
 
@@ -23,291 +24,208 @@ class Part {
   }
 }
 
-class MultipartParser extends EventEmitter {
-  constructor(logger, length, boundary, defaultOptions, opts) {
+function multipart(ctx, rate, length, opts) {
+  return new Promise((resolve, reject) => {
+    // console.log(rate, length, opts);
 
-    this.logger = logger;
-    this.ctx = null;
-    this.error = null;
-    this.ended = false;
-
-    this.maxFields = opts && typeof opts.maxFields === 'number' ? opts.maxFields : defaultOptions.maxFields;
-    this.maxFieldsSize = opts ? parseBytes(opts.maxFieldsSize, defaultOptions.maxFieldsSize) : defaultOptions.maxFieldsSize;
-    this.keepExtensions = opts && typeof opts.keepExtensions === 'boolean' ? opts.keepExtensions : defaultOptions.keepExtensions;
-    this.uploadDir = opts && opts.uploadDir ? opts.uploadDir : (defaultOptions.uploadDir || os.tmpdir());
-    this.hash = opts && typeof opts.hash === 'boolean' ? opts.hash : defaultOptions.hash;
-    this.multiples = opts && typeof opts.multiples === 'boolean' ? opts.multiples : defaultOptions.multiples;
-
-    this.bytesExpected = length;
-    this.fileBytesReceived = 0;
-    this.headerBytesReceived = 0;
-    this.rateLimit = opts ? parseBytes(opts.rateLimit, defaultOptions.rateLimit) : defaultOptions.rateLimit;
-    this.fileSizeLimit = opts ? parseBytes(opts.fileSizeLimit, defaultOptions.fileSizeLimit) : defaultOptions.fileSizeLimit;
-    this.headerSizeLimit = opts ? parseBytes(opts.headerSizeLimit, defaultOptions.headerSizeLimit) : defaultOptions.headerSizeLimit;
-
-    this._boundary = boundary;
-    this._parser = null;
-    this._flushing = 0;
-    this._fieldsSize = 0;
-    this._state = 0;
-    this._file = null;
-    this._part = null;
-    this._resolve = null;
-    this._reject = null;
-    this._reqEnd = false;
-    this._startTime = 0;
-    
-    this.FileClass = opts && opts.FileClass ? opts.FileClass : File;
-    
-  }
-  _initParser() {
-    // var parser = new MultipartParser();
-
-    // let part;
-    // let me = this;
+    let parser = new Parser();
+    let FileClass = opts && opts.FileClass ? opts.FileClass : File;
+    let file = null;
+    let part = null;
+    let headerBytes = 0;
+    let fileBytes = 0;
     let headerField = '';
     let headerValue = '';
     let transferEncoding = 'binary';
-    let headers = null;
-    let part = this._part;
-    let parser = this._parser;
+    let err = null;
+    let ended = false;
+    let state = 0;
 
-    parser.initWithBoundary(this._boundary);
 
+    parser.initWithBoundary(opts.boundary);
     parser.onPartBegin = () => {
-      // part = new Part();
-      // headerField = '';
-      // headerValue = '';
-      if (this._file !== null) {
-        this._error('size_too_large');
+      if (err || ended || state === 999) {
+        return;
       }
+      // console.log('on part begin')
+      if (file !== null || part !== null) {
+        err = 'size_too_large';
+      } else {
+        part = new Part();
+      }
+      return err;
     };
 
     parser.onHeaderField = (b, start, end) => {
-      if (this.ended) {
+      if (err || ended || state === 999) {
         return;
       }
-      this.headerBytesReceived += end - start;
-      if (this.headerSizeLimit > 0 && this.headerBytesReceived > this.headerSizeLimit) {
-        return this._error('size_too_large');
+      // console.log('on header field')
+      headerBytes += end - start;
+      if (opts.headerSizeLimit > 0 && headerBytes > opts.headerSizeLimit) {
+        err = 'size_too_large';
+      } else {
+        headerField += b.toString('utf-8', start, end).toLowerCase();
       }
-      headerField += b.toString('utf-8', start, end);
+      return err;
     };
 
     parser.onHeaderValue = (b, start, end) => {
-      if (this.ended) {
+      if (err || ended || state === 999) {
         return;
       }
-      this.headerBytesReceived += end - start;
-      if (this.headerSizeLimit > 0 && this.headerBytesReceived > this.headerSizeLimit) {
-        return this._error('size_too_large');
+      // console.log('on header value')
+      headerBytes += end - start;
+      if (opts.headerSizeLimit > 0 && headerBytes > opts.headerSizeLimit) {
+        err = 'size_too_large';
+      } else {
+        headerValue += b.toString('utf-8', start, end);
       }
-      headerValue += b.toString('utf-8', start, end);
+      return err;
     };
 
     parser.onHeaderEnd = () => {
-      if (this.ended) {
+      if (err || ended || state === 999) {
         return;
       }
-      part.headers[headerField.toLowerCase()] = headerValue;
-      var m = headerValue.match(/\bname="([^"]+)"/i);
+      // console.log('on header end', headerField)
+      part.headers[headerField] = headerValue;
       if (headerField === 'content-disposition') {
+        let m = headerValue.match(/\bname="([^"]+)"/i);
         if (m) {
           part.name = m[1];
         }
-        part.filename = this._fileName(headerValue);
+        part.filename = getFilename(headerValue);
       } else if (headerField === 'content-type') {
         part.mime = headerValue;
       } else if (headerField === 'content-transfer-encoding') {
         transferEncoding = headerValue.toLowerCase();
       }
-
       headerField = '';
       headerValue = '';
     };
 
     parser.onHeadersEnd = () => {
-      if (this.ended) {
+      if (err || ended || state === 999) {
         return;
       }
+      // console.log('on headers end')
+      // console.log(part);
       if (transferEncoding !== 'binary' && transferEncoding !== '7bit' && transferEncoding !== '8bit') {
-        return this._error('parse_error');
+        err = 'parse_error';
+        return err;
       }
       if (part.filename !== null) {
-        this._file = new this.FileClass(part.filename, this._uploadPath(part.filename), part.mime, this.hash);
-        this._file.on('error', err => {
-          this._error(err);
+        // console.log('new file')
+        file = new FileClass(part.filename, getUploadPath(opts.uploadDir, part.filename), part.mime, opts.hash);
+        file.on('error', error => {
+          console.log('fiiiiii error', error);
+          err = error;
+          done(error);
         });
-        this._file.on('finish', () => {
-          this._checkEnd();
-        })
-        this._file.open();
+        file.on('finish', () => {
+          done();
+        });
+        file.open();
+        // console.log(file)
       } else {
-        this._error('parse_error');
+        err = 'parse_error';
       }
+      return err;
     };
 
     parser.onPartData = (b, start, end) => {
-      if (this.ended) {
+      if (err || ended || state === 999) {
         return;
       }
-      if (!this._file) {
-        return;
+      if (state === 0) {
+        fileBytes = end - start;
+        state = 1;
+      } else {
+        fileBytes += end - start;
       }
-      if (this._state === 0) {
-        this.fileBytesReceived = end - start;
-        this._state = 1;
+
+      // console.log('on part data', fileBytes, opts.fileSizeLimit)
+
+      if (opts.fileSizeLimit > 0 && fileBytes > opts.fileSizeLimit) {
+        err = 'size_too_large';
+        return err;
       }
-      this.pause();
-      this._file.write(b.slice(start, end), () => {
-        this.resume();
-      });
+      file.write(b.slice(start, end));
     };
 
     parser.onPartEnd = function() {
-      this._file.end();
+      if (err || ended || state === 999) {
+        return;
+      }
+      // console.log('on part end');
+      file.end();
     };
 
-    parser.onEnd = err => {
-      if (err) {
-        this._error(err);
+    parser.onEnd = error => {
+      // console.log('parser end', error)
+      ended = true;
+      done(error);
+    };
+
+    ctx.readRequest(function onData(chunk) {
+      if (err || ended || state === 999) {
+        return err || 'already_ended';
+      }
+      // console.log('on ctx data', chunk.length);
+      parser.write(chunk);
+      return err;
+    }, function onEnd(error) {
+      if (state === 999) {
+        return;
+      }
+      // console.log('ctx end read', error)
+      if (error) {
+        return done(error);
+      }
+      parser.end();
+    }, opts.headerSizeLimit + opts.fileSizeLimit, rate);
+
+    function done(error) {
+      if (state === 999) {
+        return; // already handled
+      }
+      // console.log('check done', error);
+
+      if (error) {
+        file && file.destroy();
+        state = 999;
+        reject(error);
+        return;
+      } else if (file && file.isFinish && ended) {
+        console.log('realy file done');
+        state = 999;
+        resolve(file);
       } else {
-        this._state = 999;
-        this._checkEnd();
-      }
-    };
-
-  }
-  _checkEnd() {
-    if (this.ended) {
-      return;
-    }
-    if (this._state === 999 && this._file && this._file.isFinish) {
-      this._end();
-    }
-  }
-  pause() {
-    if (this._reqEnd || this.ended) {
-      return;
-    }
-    try {
-      this.ctx._originRequest.pause();
-    } catch(ex) {
-      if (!this.ended) {
-        this._error(ex);
+        // do nothing, not finish yet.
       }
     }
-  }
-  resume() {
-    if (this._reqEnd || this.ended) {
-      return;
-    }
-    try {
-      this.ctx._originRequest.resume();
-    } catch(ex) {
-      this._error(ex);
-    }
-  }
-  parse(ctx) {
-    this.ctx = ctx;
-    this._parser = new Parser();
-    let part = new Part();
-
-    let pms = new Promise((resolve, reject) => {
-      // save resolve and reject to use later
-      this._resolve = resolve; 
-      this._reject = reject;
-    });
-
-    this._initParser();
-
-
-    this.ctx._originRequest.on('error', err => {
-      this._error(err);
-    }).on('aborted', (err) => {
-      this._error('request_aborted');
-    }).on('data', chunk => {
-      if (this.ended) {
-        return;
-      }
-      if (this._state === 1) {
-        this.fileBytesReceived += chunk.length;
-        if (this.fileSizeLimit > 0 && this.fileBytesReceived > this.fileSizeLimit) {
-          return this._error('size_too_large');
-        }
-      }
-      let bytesParsed = this._parser.write(chunk);
-      if (bytesParsed !== chunk.length) {
-        return this._error('parse_error');
-      }
-    }).on('end', () => {
-      if (this.ended) {
-        return;
-      }
-      this._reqEnd = true;
-      this._parser.end();
-    });
-    return pms;
-  }
-  _end() {
-    if (this.ended) {
-      return;
-    }
-    this._doEnd();
-    this._resolve(this._file);
-    this._resolve = null;
-    this._reject = null;
-    this._file = null;
-  }
-  _doEnd() {
-    if (!this._reqEnd) {
-      try {
-        this.ctx._originRequest.pause();
-      } catch(ex) {
-
-      }
-    }
-    this.ctx = null;
-    this.ended = true;
-    if (this._file !== null) {
-      this._file.destroy();
-    }
-  }
-  _error(err) {
-    if (this.ended) {
-      return;
-    }
-    this._doEnd();
-    this._reject(err);
-    this._resolve = null;
-    this._reject = null;
-    this._file = null;
-  }
-  _fileName(headerValue) {
-    let m = headerValue.match(/\bfilename="(.*?)"($|; )/i);
-    if (!m) return;
-
-    let filename = m[1].substr(m[1].lastIndexOf('\\') + 1);
-    filename = filename.replace(/%22/g, '"');
-    filename = filename.replace(/&#([\d]{4});/g, function(m, code) {
-      return String.fromCharCode(code);
-    });
-    return filename;
-  }
-  _uploadPath(filename) {
-    var name = 'upload_';
-    var buf = crypto.randomBytes(16);
-    for (var i = 0; i < buf.length; ++i) {
-      name += ('0' + buf[i].toString(16)).slice(-2);
-    }
-
-    if (this.keepExtensions) {
-      var ext = path.extname(filename);
-      ext     = ext.replace(/(\.[a-z0-9]+).*/i, '$1');
-
-      name += ext;
-    }
-
-    return path.join(this.uploadDir, name);
-  }
+  });
 }
+
+function getFilename(headerValue) {
+  console.log('get file name')
+  let m = headerValue.match(/\bfilename="(.*?)"($|; )/i);
+  if (!m) {
+    return null;
+  }
+  let filename = m[1].substr(m[1].lastIndexOf('\\') + 1);
+  filename = filename.replace(/%22/g, '"');
+  filename = filename.replace(/&#([\d]{4});/g, (m, code) => String.fromCharCode(code));
+  return filename;
+}
+
+function getUploadPath(dir, filename, keepExt) {
+  let name = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+  if (keepExt) {
+    name += path.extname(filename).replace(/(\.[a-z0-9]+).*/i, '$1');
+  }
+  return path.join(dir, name);
+}
+
+module.exports = multipart;

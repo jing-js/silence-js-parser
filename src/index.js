@@ -1,8 +1,9 @@
 'use strict';
 
 const qs = require('querystring');
-const MultipartParser = require('./multipart');
+const multipart = require('./multipart');
 const jsonReg = /^[\x20\x09\x0a\x0d]*[\[\{]/;
+const os = require('os');
 const parseBytes = require('./parseBytes');
 const B500K = parseBytes('500k');
 const B2M = parseBytes('2m');
@@ -27,26 +28,26 @@ class SilenceParser {
     this.textOptions = createOptions(options.text);
     let mopts = options.multipart || {};
     this.multipartOptions = {
-      rateLimit: parseBytes(mopts.rateLimit, '2m'),
-      fileSizeLimit: parseBytes(mopts.sizeLimit, '5m'),
-      headerSizeLimit: parseBytes(mopts.headerSizeLimit, '10kb'),
-      maxFieldsSize: parseBytes(mopts.maxFieldsSize, '2m'),
+      rateLimit: parseBytes(mopts.rateLimit, '1m'),
+      fileSizeLimit: parseBytes(mopts.sizeLimit, '3m'),
+      headerSizeLimit: parseBytes(mopts.headerSizeLimit, '1kb'),
       hash: mopts.hash || false,
-      multiples: mopts.multiples || false,
       keepExtensions: mopts.keepExtensions || false,
-      uploadDir: mopts.uploadDir || null
+      uploadDir: mopts.uploadDir || os.tmpdir()
     }
   }
   _text(ctx, rate, limit, length) {
-    this.logger.debug('parse %d %d %d', rate, limit, length);
+    console.log('parse', rate, limit, length);
     return new Promise((resolve, reject) => {
       let text = '';
       let total = 0;
       function onData(chunk) {
+        console.log('on data', chunk.length);
         total += chunk.length;
         text += chunk.toString();
       }
       function onEnd(err) {
+        console.log(err, total, length);
         if (err) {
           reject(err);
         } else if (total !== length) {
@@ -56,6 +57,7 @@ class SilenceParser {
         }
       }
       if (!ctx.readRequest(onData, onEnd, limit, rate)) {
+        console.log('bad')
         reject('readRequest busy');
       }
     });
@@ -74,6 +76,9 @@ class SilenceParser {
   }
   _form(ctx, rate, limit, length) {
     return this._text(ctx, rate, limit, length).then(text => {
+      if (!text) {
+        return undefined;
+      }
       try {
         return qs.parse(text);
       } catch(ex) {
@@ -83,6 +88,7 @@ class SilenceParser {
   }
   post(ctx, options) {
     let length = ctx.headers['content-length'];
+    console.log(length);
     if (!length) {
       return Promise.reject('header_content_length_miss');
     }
@@ -92,19 +98,24 @@ class SilenceParser {
     } catch(ex) {
       nl = 0;
     }
+    if (nl <= 0) {
+      return Promise.reject('body_empty');
+    }
     let limit = 0;
     let rate = 0;
     let type = ctx._originRequest.headers['content-type'];
+    console.log(type);
     if (!type) {
       return Promise.reject('header_content_type_miss');
     }
     if (type.startsWith('application/x-www-form-urlencoded')) {
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
+      console.log(limit, rate);
       if (limit > 0 && nl > limit) {
         return Promise.reject('size_too_large');
       }
-      return this._form(ctx, rate, limit, length);
+      return this._form(ctx, rate, limit, nl);
     } else if ((
         type.startsWith('application/json') ||
         type.startsWith('application/json-patch+json') ||
@@ -116,14 +127,14 @@ class SilenceParser {
       if (limit > 0 && nl > limit) {
         return Promise.reject('size_too_large');
       }
-      return this._json(ctx, rate, limit, length);
+      return this._json(ctx, rate, limit, nl);
     } else if (type.startsWith('text/')) {
       limit = options ? parseBytes(options.sizeLimit, this.textOptions.sizeLimit) : this.textOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
         return Promise.reject('size_too_large');
       }
-      return this._text(ctx, rate, limit, length);
+      return this._text(ctx, rate, limit, nl);
     } else {
       return Promise.reject('header_content_type_dismatch');
     }
@@ -139,12 +150,15 @@ class SilenceParser {
     } catch(ex) {
       nl = 0;
     }
-    let headerSizelimit = options ? parseBytes(options.headerSizelimit, this.multipartOptions.headerSizelimit) : this.multipartOptions.headerSizelimit;
-    let fileSizelimit = options ? parseBytes(options.fileSizelimit, this.multipartOptions.fileSizelimit) : this.multipartOptions.fileSizelimit;
-    let limit = headerSizelimit + fileSizelimit;
-    if (limit > 0 && nl > limit) {
-      return Promise.reject('size_too_large');
+    if (nl <= 0) {
+      return Promise.reject('body_empty');
     }
+    let headerSizeLimit = options ? parseBytes(options.headerSizeLimit, this.multipartOptions.headerSizeLimit) : this.multipartOptions.headerSizeLimit;
+    let fileSizeLimit = options ? parseBytes(options.fileSizeLimit, this.multipartOptions.fileSizeLimit) : this.multipartOptions.fileSizeLimit;
+    let limit = headerSizeLimit + fileSizeLimit;
+    // if (limit > 0 && nl > limit) {
+    //   return Promise.reject('size_too_large');
+    // }
     let type = ctx._originRequest.headers['content-type'];
     if (!type) {
       return Promise.reject('header_content_type_miss');
@@ -156,14 +170,17 @@ class SilenceParser {
     if (!m) {
       return Promise.reject('header_content_type_boundary_dismatch');
     }
-    // return new Promise((resolve, reject) => {
-    //   let parser = new MultipartParser(this.logger, parseInt(length, 10), m[1] || m[2], this.multipartOptions, options);
-    //   parser.parse(ctx).then(res => {
-    //
-    //   }, err => {
-    //
-    //   });
-    // });
+    let rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
+
+    return multipart(ctx, rate, nl, {
+      boundary: m[1] || m[2],
+      FileClass: options ? options.FileClass : null,
+      headerSizeLimit,
+      fileSizeLimit,
+      hash: options && options.hash ? true : this.multipartOptions.hash,
+      keepExtensions: options && options.keepExtensions ? true : this.multipartOptions.keepExtensions,
+      uploadDir: options ? (options.uploadDir || this.multipartOptions.uploadDir) : this.multipartOptions.uploadDir
+    });
   }
 }
 

@@ -113,6 +113,8 @@ class MultipartParser {
       c,
       cl;
 
+    let err = null;
+
       // mark = function(name) {
       //   self[name+'Mark'] = i;
       // },
@@ -168,7 +170,10 @@ class MultipartParser {
               flags = 0;
             } else if (!(flags & F.LAST_BOUNDARY) && c == LF) {
               index = 0;
-              this.onPartBegin();
+              err = this.onPartBegin();
+              if (err) {
+                return this._error(err);
+              }
               state = S.HEADER_FIELD_START;
             } else {
               return i;
@@ -206,7 +211,10 @@ class MultipartParser {
             }
             // dataCallback('headerField', true);
             if (this.has('headerField')) {
-              this.onHeaderField(buffer, this.get('headerField'), i);
+              err = this.onHeaderField(buffer, this.get('headerField'), i);
+              if (err) {
+                return this._error(err);
+              }
               this.clear('headerField');
             }
             state = S.HEADER_VALUE_START;
@@ -229,11 +237,17 @@ class MultipartParser {
           if (c == CR) {
             // dataCallback('headerValue', true);
             if (this.has('headerValue')) {
-              this.onHeaderValue(buffer, this.get('headerValue'), i);
+              err = this.onHeaderValue(buffer, this.get('headerValue'), i);
+              if (err) {
+                return this._error(err);
+              }
               this.clear('headerValue');
             }
             // callback('headerEnd');
-            this.onHeaderEnd();
+            err = this.onHeaderEnd();
+            if (err) {
+              return this._error(err);
+            }
             state = S.HEADER_VALUE_ALMOST_DONE;
           }
           break;
@@ -249,7 +263,10 @@ class MultipartParser {
           }
 
           // callback('headersEnd');
-          this.onHeadersEnd();
+          err = this.onHeadersEnd();
+          if (err) {
+            return this._error(err);
+          }
           state = S.PART_DATA_START;
           break;
         case S.PART_DATA_START:
@@ -273,7 +290,10 @@ class MultipartParser {
               if (index === 0) {
                 // dataCallback('partData', true);
                 if (this.has('partData')) {
-                  this.onPartData(buffer, this.get('partData'), i);
+                  err = this.onPartData(buffer, this.get('partData'), i);
+                  if (err) {
+                    return this._error(err);
+                  }
                   this.clear('partData');
                 }
               }
@@ -298,8 +318,14 @@ class MultipartParser {
               if (c == LF) {
                 // unset the PART_BOUNDARY flag
                 flags &= ~F.PART_BOUNDARY;
-                this.onPartEnd();
-                this.onPartBegin();
+                err = this.onPartEnd();
+                if (err) {
+                  return this._error(err);
+                }
+                err = this.onPartBegin();
+                if (err) {
+                  return this._error(err);
+                }
                 // callback('partEnd');
                 // callback('partBegin');
                 state = S.HEADER_FIELD_START;
@@ -309,7 +335,10 @@ class MultipartParser {
               if (c == HYPHEN) {
                 // callback('partEnd');
                 // callback('end');
-                this.onPartEnd();
+                err = this.onPartEnd();
+                if (err) {
+                  return this._error(err);
+                }
                 this.onEnd();
                 state = S.END;
                 flags = 0;
@@ -329,7 +358,10 @@ class MultipartParser {
             // if our boundary turned out to be rubbish, the captured lookbehind
             // belongs to partData
             // callback('partData', lookbehind, 0, prevIndex);
-            this.onPartData(lookbehind, 0, prevIndex);
+            err = this.onPartData(lookbehind, 0, prevIndex);
+            if (err) {
+              return this._error(err);
+            }
             prevIndex = 0;
             this.mark('partData', i);
 
@@ -347,15 +379,24 @@ class MultipartParser {
     }
 
     if (this.has('headerField')) {
-      this.onHeaderField(buffer, this.get('headerField'), buffer.length);
+      err = this.onHeaderField(buffer, this.get('headerField'), buffer.length);
+      if (err) {
+        return this._error(err);
+      }
       this.mark('headerField', 0);
     }
     if (this.has('headerValue')) {
-      this.onHeaderValue(buffer, this.get('headerValue'), buffer.length);
+      err = this.onHeaderValue(buffer, this.get('headerValue'), buffer.length);
+      if (err) {
+        return this._error(err);
+      }
       this.mark('headerValue', 0);
     }
     if (this.has('partData')) {
-      this.onPartData(buffer, this.get('partData'), buffer.length);
+      err = this.onPartData(buffer, this.get('partData'), buffer.length);
+      if (err) {
+        return this._error(err);
+      }
       this.mark('partData', 0);
     }
     // dataCallback('headerField');
@@ -378,14 +419,20 @@ class MultipartParser {
     if ((this.state == S.HEADER_FIELD_START && this.index === 0) ||
       (this.state == S.PART_DATA && this.index == this.boundary.length)) {
       // callback(this, 'partEnd');
-      this.onPartEnd();
+      let err = this.onPartEnd();
+      if (err) {
+        return this._error(err);
+      }
     }
     this.onEnd(this.state !== S.END ? 'stream_ended_unexpectedly' : null);
 
+  }
+  _error(err) {
+    this.onEnd(err);
   }
   explain() {
     return 'state = ' + MultipartParser.stateToString(this.state);
   }
 }
 
-exports.MultipartParser = MultipartParser;
+module.exports = MultipartParser;
