@@ -35,11 +35,13 @@ class File extends EventEmitter {
       autoClose: true
     });
     this._stream.on('error', err => {
-      console.log('file error', err);
+      // console.log('file error', err);
       if (!this._stream) {
         return;
       }
-      this._unlink();
+      if (err.code !== 'EEXIST') {
+        this._unlink();
+      }
       this._stream = null;
       if (!this._destroied) {
         this.emit('error', err);

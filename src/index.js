@@ -32,7 +32,7 @@ class SilenceParser {
       fileSizeLimit: parseBytes(mopts.sizeLimit, '3m'),
       headerSizeLimit: parseBytes(mopts.headerSizeLimit, '1kb'),
       hash: mopts.hash || false,
-      keepExtensions: mopts.keepExtensions || false,
+      keepExtension: mopts.keepExtension || false,
       uploadDir: mopts.uploadDir || os.tmpdir()
     }
   }
@@ -42,12 +42,12 @@ class SilenceParser {
       let text = '';
       let total = 0;
       function onData(chunk) {
-        console.log('on data', chunk.length);
+        // console.log('on data', chunk.length);
         total += chunk.length;
         text += chunk.toString();
       }
       function onEnd(err) {
-        console.log(err, total, length);
+        // console.log(err, total, length);
         if (err) {
           reject(err);
         } else if (total !== length) {
@@ -57,7 +57,7 @@ class SilenceParser {
         }
       }
       if (!ctx.readRequest(onData, onEnd, limit, rate)) {
-        console.log('bad')
+        // console.log('bad')
         reject('readRequest busy');
       }
     });
@@ -88,7 +88,7 @@ class SilenceParser {
   }
   post(ctx, options) {
     let length = ctx.headers['content-length'];
-    console.log(length);
+    // console.log(length);
     if (!length) {
       return Promise.reject('header_content_length_miss');
     }
@@ -104,7 +104,7 @@ class SilenceParser {
     let limit = 0;
     let rate = 0;
     let type = ctx._originRequest.headers['content-type'];
-    console.log(type);
+    // console.log(type);
     if (!type) {
       return Promise.reject('header_content_type_miss');
     }
@@ -156,9 +156,9 @@ class SilenceParser {
     let headerSizeLimit = options ? parseBytes(options.headerSizeLimit, this.multipartOptions.headerSizeLimit) : this.multipartOptions.headerSizeLimit;
     let fileSizeLimit = options ? parseBytes(options.fileSizeLimit, this.multipartOptions.fileSizeLimit) : this.multipartOptions.fileSizeLimit;
     let limit = headerSizeLimit + fileSizeLimit;
-    // if (limit > 0 && nl > limit) {
-    //   return Promise.reject('size_too_large');
-    // }
+    if (limit > 0 && nl > limit) {
+      return Promise.reject('size_too_large');
+    }
     let type = ctx._originRequest.headers['content-type'];
     if (!type) {
       return Promise.reject('header_content_type_miss');
@@ -178,7 +178,7 @@ class SilenceParser {
       headerSizeLimit,
       fileSizeLimit,
       hash: options && options.hash ? true : this.multipartOptions.hash,
-      keepExtensions: options && options.keepExtensions ? true : this.multipartOptions.keepExtensions,
+      keepExtension: options && options.keepExtension ? true : this.multipartOptions.keepExtension,
       uploadDir: options ? (options.uploadDir || this.multipartOptions.uploadDir) : this.multipartOptions.uploadDir
     });
   }

@@ -117,9 +117,8 @@ function multipart(ctx, rate, length, opts) {
       }
       if (part.filename !== null) {
         // console.log('new file')
-        file = new FileClass(part.filename, getUploadPath(opts.uploadDir, part.filename), part.mime, opts.hash);
+        file = new FileClass(part.filename, getUploadPath(opts.uploadDir, part.filename, opts.keepExtension), part.mime, opts.hash);
         file.on('error', error => {
-          console.log('fiiiiii error', error);
           err = error;
           done(error);
         });
@@ -198,7 +197,7 @@ function multipart(ctx, rate, length, opts) {
         reject(error);
         return;
       } else if (file && file.isFinish && ended) {
-        console.log('realy file done');
+        // console.log('realy file done');
         state = 999;
         resolve(file);
       } else {
@@ -209,7 +208,7 @@ function multipart(ctx, rate, length, opts) {
 }
 
 function getFilename(headerValue) {
-  console.log('get file name')
+  // console.log('get file name')
   let m = headerValue.match(/\bfilename="(.*?)"($|; )/i);
   if (!m) {
     return null;
@@ -221,7 +220,7 @@ function getFilename(headerValue) {
 }
 
 function getUploadPath(dir, filename, keepExt) {
-  let name = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+  let name = `${Date.now()}-${Math.floor(Math.random() * 100000)}-${Math.floor(Math.random() * 100000)}`;
   if (keepExt) {
     name += path.extname(filename).replace(/(\.[a-z0-9]+).*/i, '$1');
   }

@@ -17,6 +17,5 @@
   "author": "Yuhang Ge <abeyuhang@gmail.com>",
   "license": "ISC",
   "dependencies": {
-    "formidable": "^1.0.17"
   }
 }
