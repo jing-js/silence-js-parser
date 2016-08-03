@@ -37,7 +37,7 @@ class SilenceParser {
     }
   }
   _text(ctx, rate, limit, length) {
-    console.log('parse', rate, limit, length);
+    // console.log('parse', rate, limit, length);
     return new Promise((resolve, reject) => {
       let text = '';
       let total = 0;
@@ -111,7 +111,7 @@ class SilenceParser {
     if (type.startsWith('application/x-www-form-urlencoded')) {
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
-      console.log(limit, rate);
+      // console.log(limit, rate);
       if (limit > 0 && nl > limit) {
         return Promise.reject('size_too_large');
       }
