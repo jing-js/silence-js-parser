@@ -17,7 +17,8 @@ function createOptions(options = {}) {
   let rateLimit = parseBytes(options.rateLimit, getAutoRate(sizeLimit));
   return {
     sizeLimit,
-    rateLimit
+    rateLimit,
+    deny: options.deny === true
   };
 }
 class SilenceParser {
@@ -28,6 +29,7 @@ class SilenceParser {
     this.textOptions = createOptions(options.text);
     let mopts = options.multipart || {};
     this.multipartOptions = {
+      deny: mopts.deny === true,
       rateLimit: parseBytes(mopts.rateLimit, '1m'),
       fileSizeLimit: parseBytes(mopts.sizeLimit, '3m'),
       headerSizeLimit: parseBytes(mopts.headerSizeLimit, '1kb'),
@@ -109,6 +111,9 @@ class SilenceParser {
       return Promise.reject('header_content_type_miss');
     }
     if (type.startsWith('application/x-www-form-urlencoded')) {
+      if (this.formOptions.deny) {
+        return Promise.reject('header_content_type_deny');
+      }
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       // console.log(limit, rate);
@@ -122,6 +127,9 @@ class SilenceParser {
         type.startsWith('application/vnd.api+json') ||
         type.startsWith('application/csp-report')
       )) {
+      if (this.jsonOptions.deny) {
+        return Promise.reject('header_content_type_deny');
+      }
       limit = options ? parseBytes(options.sizeLimit, this.jsonOptions.sizeLimit) : this.jsonOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
@@ -129,6 +137,9 @@ class SilenceParser {
       }
       return this._json(ctx, rate, limit, nl);
     } else if (type.startsWith('text/')) {
+      if (this.textOptions.deny) {
+        return Promise.reject('header_content_type_deny');
+      }
       limit = options ? parseBytes(options.sizeLimit, this.textOptions.sizeLimit) : this.textOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
@@ -140,6 +151,9 @@ class SilenceParser {
     }
   }
   multipart(ctx, options) {
+    if (this.multipartOptions.deny) {
+      return Promise.reject('header_content_type_deny');
+    }
     let length = ctx.headers['content-length'];
     if (!length) {
       return Promise.reject('header_content_length_miss');
