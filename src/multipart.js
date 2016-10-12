@@ -49,7 +49,7 @@ function multipart(ctx, rate, length, opts) {
       }
       // console.log('on part begin')
       if (file !== null || part !== null) {
-        err = 'size_too_large';
+        err = 413;
       } else {
         part = new Part();
       }
@@ -63,7 +63,7 @@ function multipart(ctx, rate, length, opts) {
       // console.log('on header field')
       headerBytes += end - start;
       if (opts.headerSizeLimit > 0 && headerBytes > opts.headerSizeLimit) {
-        err = 'size_too_large';
+        err = 413;
       } else {
         headerField += b.toString('utf-8', start, end).toLowerCase();
       }
@@ -77,7 +77,7 @@ function multipart(ctx, rate, length, opts) {
       // console.log('on header value')
       headerBytes += end - start;
       if (opts.headerSizeLimit > 0 && headerBytes > opts.headerSizeLimit) {
-        err = 'size_too_large';
+        err = 413;
       } else {
         headerValue += b.toString('utf-8', start, end);
       }
@@ -112,7 +112,7 @@ function multipart(ctx, rate, length, opts) {
       // console.log('on headers end')
       // console.log(part);
       if (transferEncoding !== 'binary' && transferEncoding !== '7bit' && transferEncoding !== '8bit') {
-        err = 'parse_error';
+        err = 400;
         return err;
       }
       if (part.filename !== null) {
@@ -128,7 +128,7 @@ function multipart(ctx, rate, length, opts) {
         file.open();
         // console.log(file)
       } else {
-        err = 'parse_error';
+        err = 400;
       }
       return err;
     };
@@ -147,7 +147,7 @@ function multipart(ctx, rate, length, opts) {
       // console.log('on part data', fileBytes, opts.fileSizeLimit)
 
       if (opts.fileSizeLimit > 0 && fileBytes > opts.fileSizeLimit) {
-        err = 'size_too_large';
+        err = 413;
         return err;
       }
       file.write(b.slice(start, end));

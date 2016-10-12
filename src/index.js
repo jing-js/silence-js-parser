@@ -53,14 +53,14 @@ class SilenceParser {
         if (err) {
           reject(err);
         } else if (total !== length) {
-          reject('header_content_length_wrong');
+          reject(400);
         } else {
           resolve(text);
         }
       }
       if (!ctx.readRequest(onData, onEnd, limit, rate)) {
         // console.log('bad')
-        reject('readRequest busy');
+        reject(500);
       }
     });
   }
@@ -92,7 +92,7 @@ class SilenceParser {
     let length = ctx.headers['content-length'];
     // console.log(length);
     if (!length) {
-      return Promise.reject('header_content_length_miss');
+      return Promise.reject(400);
     }
     let nl = 0;
     try {
@@ -101,24 +101,24 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject('body_empty');
+      return Promise.reject(402);
     }
     let limit = 0;
     let rate = 0;
     let type = ctx._originRequest.headers['content-type'];
     // console.log(type);
     if (!type) {
-      return Promise.reject('header_content_type_miss');
+      return Promise.reject(400);
     }
     if (type.startsWith('application/x-www-form-urlencoded')) {
       if (this.formOptions.deny) {
-        return Promise.reject('header_content_type_deny');
+        return Promise.reject(403);
       }
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       // console.log(limit, rate);
       if (limit > 0 && nl > limit) {
-        return Promise.reject('size_too_large');
+        return Promise.reject(413);
       }
       return this._form(ctx, rate, limit, nl);
     } else if ((
@@ -128,35 +128,35 @@ class SilenceParser {
         type.startsWith('application/csp-report')
       )) {
       if (this.jsonOptions.deny) {
-        return Promise.reject('header_content_type_deny');
+        return Promise.reject(403);
       }
       limit = options ? parseBytes(options.sizeLimit, this.jsonOptions.sizeLimit) : this.jsonOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
-        return Promise.reject('size_too_large');
+        return Promise.reject(413);
       }
       return this._json(ctx, rate, limit, nl);
     } else if (type.startsWith('text/')) {
       if (this.textOptions.deny) {
-        return Promise.reject('header_content_type_deny');
+        return Promise.reject(403);
       }
       limit = options ? parseBytes(options.sizeLimit, this.textOptions.sizeLimit) : this.textOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
-        return Promise.reject('size_too_large');
+        return Promise.reject(413);
       }
       return this._text(ctx, rate, limit, nl);
     } else {
-      return Promise.reject('header_content_type_dismatch');
+      return Promise.reject(400);
     }
   }
   multipart(ctx, options) {
     if (this.multipartOptions.deny) {
-      return Promise.reject('header_content_type_deny');
+      return Promise.reject(403);
     }
     let length = ctx.headers['content-length'];
     if (!length) {
-      return Promise.reject('header_content_length_miss');
+      return Promise.reject(400);
     }
     let nl = 0;
     try {
@@ -165,24 +165,24 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject('body_empty');
+      return Promise.reject(402);
     }
     let headerSizeLimit = options ? parseBytes(options.headerSizeLimit, this.multipartOptions.headerSizeLimit) : this.multipartOptions.headerSizeLimit;
     let fileSizeLimit = options ? parseBytes(options.fileSizeLimit, this.multipartOptions.fileSizeLimit) : this.multipartOptions.fileSizeLimit;
     let limit = headerSizeLimit + fileSizeLimit;
     if (limit > 0 && nl > limit) {
-      return Promise.reject('size_too_large');
+      return Promise.reject(413);
     }
     let type = ctx._originRequest.headers['content-type'];
     if (!type) {
-      return Promise.reject('header_content_type_miss');
+      return Promise.reject(400);
     }
     if (!type.startsWith('multipart/form-data')) {
-      return Promise.reject('header_content_type_dismatch');
+      return Promise.reject(400);
     }
     let m = type.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
     if (!m) {
-      return Promise.reject('header_content_type_boundary_dismatch');
+      return Promise.reject(400);
     }
     let rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
 
