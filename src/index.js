@@ -44,7 +44,6 @@ class SilenceParser {
       let text = '';
       let total = 0;
       function onData(chunk) {
-        // console.log('on data', chunk.length);
         total += chunk.length;
         text += chunk.toString();
       }
@@ -53,14 +52,14 @@ class SilenceParser {
         if (err) {
           reject(err);
         } else if (total !== length) {
-          reject(406);
+          reject(409);
         } else {
           resolve(text);
         }
       }
       if (!ctx.readRequest(onData, onEnd, limit, rate)) {
-        // console.log('bad')
-        reject(409);
+        this.logger.serror('parser', 'unexpected ctx.readRequest return');
+        reject(500);
       }
     });
   }
