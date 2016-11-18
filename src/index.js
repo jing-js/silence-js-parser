@@ -92,7 +92,7 @@ class SilenceParser {
     let length = ctx.headers['content-length'];
     // console.log(length);
     if (!length) {
-      return Promise.reject(400);
+      return Promise.reject(422);
     }
     let nl = 0;
     try {
@@ -101,18 +101,18 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject(402);
+      return Promise.reject(422);
     }
     let limit = 0;
     let rate = 0;
     let type = ctx._originRequest.headers['content-type'];
     // console.log(type);
     if (!type) {
-      return Promise.reject(400);
+      return Promise.reject(415);
     }
     if (type.startsWith('application/x-www-form-urlencoded')) {
       if (this.formOptions.deny) {
-        return Promise.reject(403);
+        return Promise.reject(415);
       }
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
@@ -128,7 +128,7 @@ class SilenceParser {
         type.startsWith('application/csp-report')
       )) {
       if (this.jsonOptions.deny) {
-        return Promise.reject(403);
+        return Promise.reject(415);
       }
       limit = options ? parseBytes(options.sizeLimit, this.jsonOptions.sizeLimit) : this.jsonOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
@@ -138,7 +138,7 @@ class SilenceParser {
       return this._json(ctx, rate, limit, nl);
     } else if (type.startsWith('text/')) {
       if (this.textOptions.deny) {
-        return Promise.reject(403);
+        return Promise.reject(415);
       }
       limit = options ? parseBytes(options.sizeLimit, this.textOptions.sizeLimit) : this.textOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
@@ -147,16 +147,16 @@ class SilenceParser {
       }
       return this._text(ctx, rate, limit, nl);
     } else {
-      return Promise.reject(400);
+      return Promise.reject(415);
     }
   }
   multipart(ctx, options) {
     if (this.multipartOptions.deny) {
-      return Promise.reject(403);
+      return Promise.reject(415);
     }
     let length = ctx.headers['content-length'];
     if (!length) {
-      return Promise.reject(400);
+      return Promise.reject(422);
     }
     let nl = 0;
     try {
@@ -165,7 +165,7 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject(402);
+      return Promise.reject(422);
     }
     let headerSizeLimit = options ? parseBytes(options.headerSizeLimit, this.multipartOptions.headerSizeLimit) : this.multipartOptions.headerSizeLimit;
     let fileSizeLimit = options ? parseBytes(options.fileSizeLimit, this.multipartOptions.fileSizeLimit) : this.multipartOptions.fileSizeLimit;
@@ -175,14 +175,14 @@ class SilenceParser {
     }
     let type = ctx._originRequest.headers['content-type'];
     if (!type) {
-      return Promise.reject(400);
+      return Promise.reject(415);
     }
     if (!type.startsWith('multipart/form-data')) {
-      return Promise.reject(400);
+      return Promise.reject(415);
     }
     let m = type.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
     if (!m) {
-      return Promise.reject(400);
+      return Promise.reject(415);
     }
     let rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
 
