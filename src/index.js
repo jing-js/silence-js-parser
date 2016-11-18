@@ -53,14 +53,14 @@ class SilenceParser {
         if (err) {
           reject(err);
         } else if (total !== length) {
-          reject(400);
+          reject(406);
         } else {
           resolve(text);
         }
       }
       if (!ctx.readRequest(onData, onEnd, limit, rate)) {
         // console.log('bad')
-        reject(500);
+        reject(409);
       }
     });
   }
