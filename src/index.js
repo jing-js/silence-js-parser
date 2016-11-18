@@ -92,7 +92,7 @@ class SilenceParser {
     let length = ctx.headers['content-length'];
     // console.log(length);
     if (!length) {
-      return Promise.reject(422);
+      return Promise.reject(411);
     }
     let nl = 0;
     try {
@@ -101,7 +101,7 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject(422);
+      return Promise.reject(411);
     }
     let limit = 0;
     let rate = 0;
@@ -156,7 +156,7 @@ class SilenceParser {
     }
     let length = ctx.headers['content-length'];
     if (!length) {
-      return Promise.reject(422);
+      return Promise.reject(411);
     }
     let nl = 0;
     try {
@@ -165,7 +165,7 @@ class SilenceParser {
       nl = 0;
     }
     if (nl <= 0) {
-      return Promise.reject(422);
+      return Promise.reject(411);
     }
     let headerSizeLimit = options ? parseBytes(options.headerSizeLimit, this.multipartOptions.headerSizeLimit) : this.multipartOptions.headerSizeLimit;
     let fileSizeLimit = options ? parseBytes(options.fileSizeLimit, this.multipartOptions.fileSizeLimit) : this.multipartOptions.fileSizeLimit;
