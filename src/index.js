@@ -8,17 +8,36 @@ const parseBytes = require('./parseBytes');
 const B500K = parseBytes('500k');
 const B2M = parseBytes('2m');
 const B1M = parseBytes('1m');
+const AcceptTypeMap = {
+  json: 'application/json',
+  binary: 'application/octet-stream',
+  text: 'text/plain',
+  form: 'application/x-www-form-urlencoded'
+};
+const AcceptTypes = [
+  'application/json', 'application/octet-stream',
+  'text/plain', 'application/x-www-form-urlencoded'
+];
 
 function getAutoRate(sizeLimit) {
   return sizeLimit <= B500K ? 0 : (sizeLimit <= B2M ? B500K : B1M);
+}
+function getAcceptContentType(options) {
+  let ct = options.defaultAcceptContentType || 'json';
+  if (AcceptTypeMap.hasOwnProperty(ct)) {
+    ct = AcceptTypeMap[ct];
+  }
+  if (AcceptTypes.indexOf(ct) < 0) {
+    throw new Error('Unknown accept content type ' + ct);
+  }
+  return ct;
 }
 function createOptions(options = {}) {
   let sizeLimit = parseBytes(options.sizeLimit, '50kb');
   let rateLimit = parseBytes(options.rateLimit, getAutoRate(sizeLimit));
   return {
     sizeLimit,
-    rateLimit,
-    deny: options.deny === true
+    rateLimit
   };
 }
 class SilenceParser {
@@ -27,6 +46,8 @@ class SilenceParser {
     this.jsonOptions = createOptions(options.json)
     this.formOptions = createOptions(options.form);
     this.textOptions = createOptions(options.text);
+    this.binaryOptions = createOptions(options.binary);
+    this.acceptType = getAcceptContentType(options);
     let mopts = options.multipart || {};
     this.multipartOptions = {
       deny: mopts.deny === true,
@@ -87,6 +108,30 @@ class SilenceParser {
       }
     });
   }
+  _binary(ctx, rate, limit, length) {
+    return new Promise((resolve, reject) => {
+      let buf = Buffer.allocUnsafe(0);
+      let total = 0;
+      function onData(chunk) {
+        total += chunk.length;
+        buf = Buffer.concat([buf, chunk], total);
+      }
+      function onEnd(err) {
+        // console.log(err, total, length);
+        if (err) {
+          reject(err);
+        } else if (total !== length) {
+          reject(409);
+        } else {
+          resolve(buf);
+        }
+      }
+      if (!ctx.readRequest(onData, onEnd, limit, rate)) {
+        this.logger.serror('parser', 'unexpected ctx.readRequest return');
+        reject(500);
+      }
+    });
+  }
   post(ctx, options) {
     let length = ctx.headers['content-length'];
     // console.log(length);
@@ -109,10 +154,19 @@ class SilenceParser {
     if (!type) {
       return Promise.reject(415);
     }
-    if (type.startsWith('application/x-www-form-urlencoded')) {
-      if (this.formOptions.deny) {
-        return Promise.reject(415);
+    let acceptContentType = this.acceptType;
+    if (options && options.acceptContentType) {
+      acceptContentType = options.acceptContentType;
+      if (AcceptTypeMap.hasOwnProperty(acceptContentType)) {
+        acceptContentType = AcceptTypeMap[acceptContentType];
       }
+    }
+    if (type !== acceptContentType) {
+      console.log(acceptContentType, type);
+      return Promise.reject(415);
+    }
+
+    if (type === 'application/x-www-form-urlencoded') {
       limit = options ? parseBytes(options.sizeLimit, this.formOptions.sizeLimit) : this.formOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       // console.log(limit, rate);
@@ -120,39 +174,32 @@ class SilenceParser {
         return Promise.reject(413);
       }
       return this._form(ctx, rate, limit, nl);
-    } else if ((
-        type.startsWith('application/json') ||
-        type.startsWith('application/json-patch+json') ||
-        type.startsWith('application/vnd.api+json') ||
-        type.startsWith('application/csp-report')
-      )) {
-      if (this.jsonOptions.deny) {
-        return Promise.reject(415);
-      }
+    } else if (type === 'application/json') {
       limit = options ? parseBytes(options.sizeLimit, this.jsonOptions.sizeLimit) : this.jsonOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
         return Promise.reject(413);
       }
       return this._json(ctx, rate, limit, nl);
-    } else if (type.startsWith('text/')) {
-      if (this.textOptions.deny) {
-        return Promise.reject(415);
-      }
+    } else if (type === 'text/plain') {
       limit = options ? parseBytes(options.sizeLimit, this.textOptions.sizeLimit) : this.textOptions.sizeLimit;
       rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
       if (limit > 0 && nl > limit) {
         return Promise.reject(413);
       }
       return this._text(ctx, rate, limit, nl);
+    } else if (type === 'application/octet-stream') {
+      limit = options ? parseBytes(options.sizeLimit, this.binaryOptions.sizeLimit) : this.binaryOptions.sizeLimit;
+      rate = options ? parseBytes(options.rateLimit, getAutoRate(limit)) : getAutoRate(limit);
+      if (limit > 0 && nl > limit) {
+        return Promise.reject(413);
+      }
+      return this._binary(ctx, rate, limit, nl);
     } else {
       return Promise.reject(415);
     }
   }
   multipart(ctx, options) {
-    if (this.multipartOptions.deny) {
-      return Promise.reject(415);
-    }
     let length = ctx.headers['content-length'];
     if (!length) {
       return Promise.reject(411);

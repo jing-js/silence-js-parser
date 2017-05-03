@@ -91,6 +91,11 @@ class File extends EventEmitter {
   get isFinish() {
     return this._stream === undefined;
   }
+  unlink() {
+    if (this.path) {
+      fs.unlink(path); // ignore errors
+    }
+  }
 }
 
 module.exports = File;
